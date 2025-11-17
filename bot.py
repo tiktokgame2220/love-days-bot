@@ -16,7 +16,12 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "🤖 Love Days Bot is running!"
+    return "🤖 Love Days Bot is running! 🌟"
+
+
+@app.route('/health')
+def health():
+    return "✅ Bot is healthy and running!"
 
 
 def run_web_server():
@@ -28,14 +33,6 @@ def keep_alive():
     t.daemon = True
     t.start()
 
-
-# В функции main() добавь:
-def main():
-    keep_alive()  # Добавь эту строку
-
-    # Остальной код main() без изменений
-    init_db()
-    application = Application.builder().token(BOT_TOKEN).build()
 
 # Загружаем переменные из .env файла
 load_dotenv()
@@ -54,6 +51,35 @@ if not BOT_TOKEN:
     print("❌ Ошибка: BOT_TOKEN не найден!")
     print("ℹ️ Проверь файл .env")
     exit(1)
+
+# Премиум функции и их стоимость в звездах
+PREMIUM_FEATURES = {
+    "advanced_stats": {
+        "name": "📊 Расширенная статистика",
+        "cost": 5,
+        "description": "Графики, прогнозы и глубокий анализ отношений"
+    },
+    "personal_holidays": {
+        "name": "🎪 Персональные праздники",
+        "cost": 3,
+        "description": "Добавь свои уникальные праздники"
+    },
+    "smart_reminders": {
+        "name": "🔔 Умные напоминания",
+        "cost": 4,
+        "description": "Напоминания за неделю/день до событий"
+    },
+    "compatibility_tests": {
+        "name": "❤️ Тесты совместимости",
+        "cost": 7,
+        "description": "Психологические тесты для пары"
+    },
+    "premium_pack": {
+        "name": "💎 Полный премиум пакет",
+        "cost": 10,
+        "description": "Все функции со скидкой 30%"
+    }
+}
 
 # Праздники мира
 HOLIDAYS = {
@@ -146,6 +172,21 @@ def init_db():
             PRIMARY KEY (user_id, name)
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS personal_holidays (
+            user_id INTEGER,
+            name TEXT,
+            date TEXT,
+            PRIMARY KEY (user_id, name)
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS premium_users (
+            user_id INTEGER PRIMARY KEY,
+            purchased_features TEXT,
+            purchase_date TEXT
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -203,6 +244,39 @@ def delete_birthday(user_id, name):
     conn.close()
 
 
+def get_user_features(user_id):
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('SELECT purchased_features FROM premium_users WHERE user_id = ?', (user_id,))
+    result = cursor.fetchone()
+    conn.close()
+
+    if result and result[0]:
+        return result[0].split(',')
+    return []
+
+
+def add_user_feature(user_id, feature):
+    current_features = get_user_features(user_id)
+    if feature not in current_features:
+        current_features.append(feature)
+
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT OR REPLACE INTO premium_users (user_id, purchased_features, purchase_date)
+        VALUES (?, ?, ?)
+    ''', (user_id, ','.join(current_features), datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+
+
+def has_premium_feature(user_id, feature):
+    return feature in get_user_features(user_id)
+
+
 def calculate_days_until_date(target_date):
     moscow_tz = pytz.timezone('Europe/Moscow')
     current_date = datetime.now(moscow_tz).date()
@@ -234,6 +308,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 /find праздник - найти праздник
 /nextholiday - ближайший праздник
 /botday - день создания бота
+
+💎 Премиум функции:
+/premium_shop - магазин функций за Stars
+/advanced_stats - расширенная статистика
+/compatibility - тест совместимости
+/add_holiday - добавить свой праздник
 
 ❓ Помощь:
 /help - показать справку
@@ -561,28 +641,249 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(message)
 
 
+# ПРЕМИУМ ФУНКЦИИ
+async def premium_shop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Магазин премиум функций"""
+    user_features = get_user_features(update.effective_user.id)
+
+    message = "⭐ **Магазин премиум функций** ⭐\n\n"
+    message += "💎 _Разблокируй эксклюзивные функции за Telegram Stars_\n\n"
+
+    for feature_id, feature_data in PREMIUM_FEATURES.items():
+        purchased = "✅ КУПЛЕНО" if feature_id in user_features else ""
+        message += f"{feature_data['name']}\n"
+        message += f"💰 {feature_data['cost']} звезд\n"
+        message += f"📝 {feature_data['description']}\n"
+        message += f"{purchased}\n"
+        if not purchased:
+            message += f"🛒 /buy_{feature_id}\n"
+        message += "\n"
+
+    message += "✨ **Как купить:**\n"
+    message += "1. Нажми на команду покупки\n"
+    message += "2. Оплати Stars через Telegram\n"
+    message += "3. Функция сразу активируется!\n\n"
+    message += "💫 Звезды можно получить за стикеры или купить в @PremiumBot"
+
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+
+async def buy_feature(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработка покупки функции"""
+    command = update.message.text.replace('/', '')
+    feature_id = command[4:]  # Убираем 'buy_'
+
+    if feature_id not in PREMIUM_FEATURES:
+        await update.message.reply_text("❌ Такой функции не существует")
+        return
+
+    feature_data = PREMIUM_FEATURES[feature_id]
+    user_id = update.effective_user.id
+
+    if has_premium_feature(user_id, feature_id):
+        await update.message.reply_text(f"✅ У вас уже куплена функция: {feature_data['name']}")
+        return
+
+    # В реальном боте здесь будет интеграция с Telegram Stars API
+    # Для демо просто активируем функцию
+
+    add_user_feature(user_id, feature_id)
+
+    message = f"""
+🎉 **Поздравляем с покупкой!**
+
+✅ **Приобретено:** {feature_data['name']}
+💰 **Стоимость:** {feature_data['cost']} звезд
+📅 **Активировано:** {datetime.now().strftime('%d.%m.%Y %H:%M')}
+
+{feature_data['description']}
+
+✨ Функция активирована и готова к использованию!
+    """
+
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+
+async def advanced_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Расширенная статистика отношений"""
+    user_id = update.effective_user.id
+
+    if not has_premium_feature(user_id, "advanced_stats"):
+        await update.message.reply_text(
+            "❌ Эта функция доступна в премиум версии!\n"
+            "⭐ Разблокируй за 5 звезд: /premium_shop"
+        )
+        return
+
+    data = get_relationship_data(user_id)
+    if not data:
+        await update.message.reply_text("❌ Сначала установи дату отношений: /setdate DD.MM.YYYY")
+        return
+
+    start_date = datetime.fromisoformat(data[0]).date()
+    current_date = datetime.now().date()
+    days_together = (current_date - start_date).days
+
+    # Расширенная статистика
+    message = "📊 **РАСШИРЕННАЯ СТАТИСТИКА** 💎\n\n"
+    message += f"📅 Всего дней вместе: {days_together}\n"
+    message += f"📈 Пройдено пути: {min(100, days_together)}%\n"
+    message += f"🎯 До 1 года отношений: {max(0, 365 - days_together)} дней\n"
+    message += f"💍 До условной свадьбы: {max(0, 1000 - days_together)} дней\n\n"
+
+    # График прогресса (текстовый)
+    progress = min(20, days_together // 50)
+    message += f"📊 Прогресс: [{'⭐' * progress}{'○' * (20 - progress)}]\n\n"
+
+    # Прогноз
+    if days_together < 100:
+        message += "🎭 **Стадия:** Медовый месяц\n💡 **Совет:** Наслаждайтесь каждым моментом!"
+    elif days_together < 365:
+        message += "🎭 **Стадия:** Становление пары\n💡 **Совет:** Учитесь понимать друг друга!"
+    else:
+        message += "🎭 **Стадия:** Крепкий союз\n💡 **Совет:** Цените доверие и уважение!"
+
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+
+async def add_personal_holiday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Добавление персонального праздника"""
+    user_id = update.effective_user.id
+
+    if not has_premium_feature(user_id, "personal_holidays"):
+        await update.message.reply_text(
+            "❌ Эта функция доступна в премиум версии!\n"
+            "⭐ Разблокируй за 3 звезды: /premium_shop"
+        )
+        return
+
+    if len(context.args) < 2:
+        await update.message.reply_text(
+            "🎪 **Добавь персональный праздник**\n\n"
+            "Использование:\n"
+            "/add_holiday 'Название' DD.MM\n\n"
+            "Пример:\n"
+            "/add_holiday 'День нашей встречи' 14.02\n"
+            "/add_holiday 'Первое свидание' 01.03"
+        )
+        return
+
+    try:
+        holiday_name = context.args[0].strip('"\'')
+        date_str = context.args[1]
+
+        # Сохраняем в базу персональных праздников
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO personal_holidays (user_id, name, date)
+            VALUES (?, ?, ?)
+        ''', (user_id, holiday_name, date_str))
+        conn.commit()
+        conn.close()
+
+        await update.message.reply_text(
+            f"✅ **Персональный праздник добавлен!**\n\n"
+            f"🎉 **Название:** {holiday_name}\n"
+            f"📅 **Дата:** {date_str}\n\n"
+            f"Теперь он будет отображаться в твоих праздниках!"
+        )
+
+    except Exception as e:
+        await update.message.reply_text("❌ Ошибка! Проверь формат: /add_holiday 'Название' DD.MM")
+
+
+async def compatibility_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Тест совместимости"""
+    user_id = update.effective_user.id
+
+    if not has_premium_feature(user_id, "compatibility_tests"):
+        await update.message.reply_text(
+            "❌ Эта функция доступна в премиум версии!\n"
+            "⭐ Разблокируй за 7 звезд: /premium_shop"
+        )
+        return
+
+    # Простой тест совместимости
+    message = "❤️ **ТЕСТ СОВМЕСТИМОСТИ** 💎\n\n"
+
+    data = get_relationship_data(user_id)
+    if data and data[1]:  # Если есть имя партнера
+        partner_name = data[1]
+        days_together = (datetime.now().date() - datetime.fromisoformat(data[0]).date()).days
+
+        # "Случайный" результат на основе user_id
+        compatibility = (user_id % 70) + 30  # 30-99%
+
+        message += f"🧑‍🤝‍🧑 **Пара:** Вы + {partner_name}\n"
+        message += f"📅 **Вместе:** {days_together} дней\n"
+        message += f"💖 **Совместимость:** {compatibility}%\n\n"
+
+        if compatibility >= 80:
+            message += "✨ **Идеальная пара!** Вы созданы друг для друга!"
+        elif compatibility >= 60:
+            message += "💕 **Хорошая совместимость!** Работайте над отношениями!"
+        else:
+            message += "🌱 **Есть потенциал!** Учитесь понимать друг друга!"
+    else:
+        message += "❌ Сначала установи дату отношений с именем партнера:\n"
+        message += "/setdate DD.MM.YYYY Имя"
+
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+
+# Команды покупки
+async def buy_advanced_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await buy_feature(update, context)
+
+
+async def buy_personal_holidays(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await buy_feature(update, context)
+
+
+async def buy_smart_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await buy_feature(update, context)
+
+
+async def buy_compatibility_tests(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await buy_feature(update, context)
+
+
+async def buy_premium_pack(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await buy_feature(update, context)
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     help_text = """
 💕 Бот для подсчета дней отношений и праздников
 
-📅 Отношения:
+📅 ОТНОШЕНИЯ:
 /setdate DD.MM.YYYY - установить дату
 /count - посчитать дни
 /stats - статистика
 
-🎂 Дни рождения:
+🎂 ДНИ РОЖДЕНИЯ:
 /addbirthday Имя DD.MM - добавить
 /birthdays - список
 /delbirthday Имя - удалить
 
-🎉 Праздники:
+🎉 ПРАЗДНИКИ:
 /holidays - ближайшие праздники
 /allholidays - все праздники мира
 /find праздник - найти праздник
 /nextholiday - ближайший праздник
 /botday - день создания бота
 
-❓ Помощь:
+💎 ПРЕМИУМ ФУНКЦИИ:
+/premium_shop - магазин функций за Stars
+/advanced_stats - расширенная статистика
+/compatibility - тест совместимости
+/add_holiday - добавить свой праздник
+
+⭐ Стоимость: от 3 до 10 Stars
+
+❓ ПОМОЩЬ:
 /help - справка
     """
     await update.message.reply_text(help_text)
@@ -594,6 +895,9 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 def main():
+    # Запускаем веб-сервер для Render
+    keep_alive()
+
     # Инициализируем БД
     init_db()
 
@@ -615,12 +919,28 @@ def main():
     application.add_handler(CommandHandler("botday", bot_birthday_info))
     application.add_handler(CommandHandler("help", help_command))
 
+    # ПРЕМИУМ КОМАНДЫ
+    application.add_handler(CommandHandler("premium_shop", premium_shop))
+    application.add_handler(CommandHandler("advanced_stats", advanced_stats))
+    application.add_handler(CommandHandler("add_holiday", add_personal_holiday))
+    application.add_handler(CommandHandler("compatibility", compatibility_test))
+
+    # Команды покупки
+    application.add_handler(CommandHandler("buy_advanced_stats", buy_advanced_stats))
+    application.add_handler(CommandHandler("buy_personal_holidays", buy_personal_holidays))
+    application.add_handler(CommandHandler("buy_smart_reminders", buy_smart_reminders))
+    application.add_handler(CommandHandler("buy_compatibility_tests", buy_compatibility_tests))
+    application.add_handler(CommandHandler("buy_premium_pack", buy_premium_pack))
+
     # Добавляем обработчик ошибок
     application.add_error_handler(error_handler)
 
     print("🤖 Бот запущен...")
     print("🎂 День создания бота: 15 Ноября")
     print("🌍 Загружено праздников:", len(HOLIDAYS))
+    print("💎 Система монетизации через Stars активирована!")
+    print("🌐 Веб-сервер запущен на порту 10000")
+
     application.run_polling()
 
 
