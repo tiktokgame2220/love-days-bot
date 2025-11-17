@@ -47,6 +47,8 @@ logger = logging.getLogger(__name__)
 # Получаем токен из переменных окружения
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
+BOT_TOKEN = os.environ.get('BOT_TOKEN') or "8475594457:AAG-W1Xk46Igpv9yMibtOFmZhSy_Q7LEcsM"
+
 if not BOT_TOKEN:
     print("❌ Ошибка: BOT_TOKEN не найден!")
     print("ℹ️ Проверь файл .env")
