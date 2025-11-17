@@ -5,37 +5,28 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from datetime import datetime
 import pytz
-from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
-import time
 
 # Веб-сервер для Render
 app = Flask('')
-
 
 @app.route('/')
 def home():
     return "🤖 Love Days Bot is running! 🌟"
 
-
 @app.route('/health')
 def health():
     return "✅ Bot is healthy and running!"
 
-
 def run_web_server():
-    app.run(host='0.0.0.0', port=10000)
-
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
     t = Thread(target=run_web_server)
     t.daemon = True
     t.start()
-
-
-# Загружаем переменные из .env файла
-load_dotenv()
 
 # Настройка логирования
 logging.basicConfig(
@@ -44,8 +35,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Получаем токен из переменных окружения
-BOT_TOKEN = os.getenv('BOT_TOKEN')
+# Получаем токен из переменных окружения Render
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
+
+if not BOT_TOKEN:
+    print("❌ Ошибка: BOT_TOKEN не найден!")
+    print("ℹ️ Установи переменную BOT_TOKEN в настройках Render")
+    exit(1)
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN') or "8475594457:AAG-W1Xk46Igpv9yMibtOFmZhSy_Q7LEcsM"
 
@@ -58,12 +54,12 @@ if not BOT_TOKEN:
 PREMIUM_FEATURES = {
     "advanced_stats": {
         "name": "📊 Расширенная статистика",
-        "cost": 5,
+        "cost": 10,
         "description": "Графики, прогнозы и глубокий анализ отношений"
     },
     "personal_holidays": {
         "name": "🎪 Персональные праздники",
-        "cost": 3,
+        "cost": 2,
         "description": "Добавь свои уникальные праздники"
     },
     "smart_reminders": {
@@ -73,12 +69,12 @@ PREMIUM_FEATURES = {
     },
     "compatibility_tests": {
         "name": "❤️ Тесты совместимости",
-        "cost": 7,
+        "cost": 8,
         "description": "Психологические тесты для пары"
     },
     "premium_pack": {
         "name": "💎 Полный премиум пакет",
-        "cost": 10,
+        "cost": 15,
         "description": "Все функции со скидкой 30%"
     }
 }
