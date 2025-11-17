@@ -6,6 +6,36 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from datetime import datetime
 import pytz
 from dotenv import load_dotenv
+from flask import Flask
+from threading import Thread
+import time
+
+# Веб-сервер для Render
+app = Flask('')
+
+
+@app.route('/')
+def home():
+    return "🤖 Love Days Bot is running!"
+
+
+def run_web_server():
+    app.run(host='0.0.0.0', port=10000)
+
+
+def keep_alive():
+    t = Thread(target=run_web_server)
+    t.daemon = True
+    t.start()
+
+
+# В функции main() добавь:
+def main():
+    keep_alive()  # Добавь эту строку
+
+    # Остальной код main() без изменений
+    init_db()
+    application = Application.builder().token(BOT_TOKEN).build()
 
 # Загружаем переменные из .env файла
 load_dotenv()
